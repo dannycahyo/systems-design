@@ -5,7 +5,7 @@ This is a simple Express application that demonstrates the concept of caching to
 ## Setup
 
 1. Install the necessary dependencies by running `npm install`.
-2. In this directory, run `node app.js` to start the application.
+2. In this directory, run `node server.js` to start the application.
 
 ## Usage
 
