@@ -6,6 +6,13 @@ This repository is organized into directories, each covering a specific topic re
 
 - `storage/`: Demonstrates various storage solutions and their use cases in system design.
 - `caching/`: Demonstrates the implementation and benefits of caching mechanisms in web applications.
+- `db-sharding/`: Demonstrates the concept of database sharding and its implementation.
+- `proxies/`: Demonstrates the concept of proxies and their use cases in system design.
+- `load-balancers/`: Demonstrates the concept of load balancing and its implementation.
+- `pooling-and-streaming/`: Demonstrates the concepts of connection pooling and streaming in system design.
+- `rate-limiting/`: Demonstrates the concept of rate limiting and its implementation.
+- `key-value-store/`: Demonstrates the concept of key-value stores and their use cases in system design.
+- `publish-subscribe-pattern/`: Demonstrates the publish-subscribe pattern and its implementation.
 
 ## Usage
 
