@@ -24,9 +24,9 @@ class DistributedNode {
 
     // Network timeouts (longer than simulation for real network delays)
     this.electionTimeout = null;
-    this.heartbeatInterval = null;
+    this.heartbeatTimeout = null; // Changed from heartbeatInterval for more flexible timing
     this.electionTimeoutMs = this.getRandomElectionTimeout();
-    this.heartbeatIntervalMs = 2000; // 2 seconds heartbeat
+    this.heartbeatIntervalMs = 2000; // 2 seconds base heartbeat
     this.requestTimeoutMs = 1000; // 1 second request timeout
 
     // Express app
@@ -38,7 +38,23 @@ class DistributedNode {
   }
 
   getRandomElectionTimeout() {
-    return Math.floor(Math.random() * 3000) + 5000; // 5-8 seconds
+    // Wider range for more randomization: 4-12 seconds
+    // This creates more variability in who starts elections first
+    const baseTimeout = 4000;
+    const randomRange = 8000;
+    return Math.floor(Math.random() * randomRange) + baseTimeout;
+  }
+
+  // Add jitter to network delays to simulate real network conditions
+  getNetworkDelay() {
+    // Random network delay between 10ms - 200ms
+    return Math.floor(Math.random() * 190) + 10;
+  }
+
+  // Add processing jitter to simulate server load variations
+  getProcessingDelay() {
+    // Random processing delay between 5ms - 50ms
+    return Math.floor(Math.random() * 45) + 5;
   }
 
   log(message) {
@@ -74,15 +90,29 @@ class DistributedNode {
     });
 
     // Vote request endpoint
-    this.app.post('/vote-request', (req, res) => {
+    this.app.post('/vote-request', async (req, res) => {
       const { term, candidateId } = req.body;
+
+      // Add realistic processing delay
+      const processingDelay = this.getProcessingDelay();
+      await new Promise((resolve) =>
+        setTimeout(resolve, processingDelay),
+      );
+
       const response = this.handleVoteRequest(term, candidateId);
       res.json(response);
     });
 
     // Heartbeat endpoint
-    this.app.post('/heartbeat', (req, res) => {
+    this.app.post('/heartbeat', async (req, res) => {
       const { term, leaderId } = req.body;
+
+      // Add small processing delay for heartbeats
+      const heartbeatDelay = Math.floor(Math.random() * 20) + 5; // 5-25ms
+      await new Promise((resolve) =>
+        setTimeout(resolve, heartbeatDelay),
+      );
+
       this.handleHeartbeat(term, leaderId);
       res.json({ received: true });
     });
@@ -114,8 +144,9 @@ class DistributedNode {
   async stop() {
     this.log('Shutting down...');
     this.clearElectionTimer();
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
+    if (this.heartbeatTimeout) {
+      clearTimeout(this.heartbeatTimeout);
+      this.heartbeatTimeout = null;
     }
 
     // Unregister from cluster
@@ -276,9 +307,26 @@ class DistributedNode {
   }
 
   async requestVotes() {
-    const votePromises = this.peers.map(async (peer) => {
+    // Randomize the order of vote requests to avoid predictable patterns
+    const shuffledPeers = [...this.peers].sort(
+      () => Math.random() - 0.5,
+    );
+
+    const votePromises = shuffledPeers.map(async (peer, index) => {
       try {
-        this.log(`Requesting vote from Node ${peer.id}:${peer.port}`);
+        // Add random delay before sending request to simulate network jitter
+        const networkDelay = this.getNetworkDelay();
+        const processingDelay = this.getProcessingDelay();
+        const totalDelay =
+          networkDelay + index * 50 + processingDelay; // Stagger requests
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, totalDelay),
+        );
+
+        this.log(
+          `Requesting vote from Node ${peer.id}:${peer.port} (delay: ${totalDelay}ms)`,
+        );
 
         const response = await axios.post(
           `${peer.url}/vote-request`,
@@ -361,18 +409,29 @@ class DistributedNode {
 
     this.log(`👑 BECAME LEADER for term ${this.currentTerm}!`);
 
-    // Start sending heartbeats
-    this.sendHeartbeats();
-    this.heartbeatInterval = setInterval(() => {
-      this.sendHeartbeats();
-    }, this.heartbeatIntervalMs);
+    // Start sending heartbeats with jitter
+    this.scheduleNextHeartbeat();
+  }
+
+  scheduleNextHeartbeat() {
+    if (this.state !== STATES.LEADER) return;
+
+    // Add jitter to heartbeat timing (±500ms) to make it less predictable
+    const jitter = Math.floor(Math.random() * 1000) - 500; // -500ms to +500ms
+    const nextHeartbeatDelay = this.heartbeatIntervalMs + jitter;
+
+    this.heartbeatTimeout = setTimeout(() => {
+      this.sendHeartbeats().then(() => {
+        this.scheduleNextHeartbeat(); // Schedule next heartbeat
+      });
+    }, Math.max(1000, nextHeartbeatDelay)); // Ensure minimum 1 second
   }
 
   async sendHeartbeats() {
     if (this.state !== STATES.LEADER) {
-      if (this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-        this.heartbeatInterval = null;
+      if (this.heartbeatTimeout) {
+        clearTimeout(this.heartbeatTimeout);
+        this.heartbeatTimeout = null;
       }
       return;
     }
@@ -380,24 +439,37 @@ class DistributedNode {
     // Rediscover peers in case cluster changed
     this.discoverPeers();
 
-    const heartbeatPromises = this.peers.map(async (peer) => {
-      try {
-        await axios.post(
-          `${peer.url}/heartbeat`,
-          {
-            term: this.currentTerm,
-            leaderId: this.id,
-          },
-          {
-            timeout: this.requestTimeoutMs,
-          },
-        );
-      } catch (error) {
-        this.log(
-          `❌ Failed to send heartbeat to Node ${peer.id}: ${error.message}`,
-        );
-      }
-    });
+    // Randomize heartbeat order and add jitter
+    const shuffledPeers = [...this.peers].sort(
+      () => Math.random() - 0.5,
+    );
+
+    const heartbeatPromises = shuffledPeers.map(
+      async (peer, index) => {
+        try {
+          // Add small random delay between heartbeats
+          const heartbeatJitter = Math.floor(Math.random() * 100); // 0-100ms
+          await new Promise((resolve) =>
+            setTimeout(resolve, heartbeatJitter + index * 25),
+          );
+
+          await axios.post(
+            `${peer.url}/heartbeat`,
+            {
+              term: this.currentTerm,
+              leaderId: this.id,
+            },
+            {
+              timeout: this.requestTimeoutMs,
+            },
+          );
+        } catch (error) {
+          this.log(
+            `❌ Failed to send heartbeat to Node ${peer.id}: ${error.message}`,
+          );
+        }
+      },
+    );
 
     await Promise.allSettled(heartbeatPromises);
   }
@@ -427,9 +499,9 @@ class DistributedNode {
     if (this.state === STATES.LEADER) {
       this.state = STATES.FOLLOWER;
       this.clearElectionTimer();
-      if (this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval);
-        this.heartbeatInterval = null;
+      if (this.heartbeatTimeout) {
+        clearTimeout(this.heartbeatTimeout);
+        this.heartbeatTimeout = null;
       }
       this.startElectionTimer();
       this.log('Stepped down from leadership');
