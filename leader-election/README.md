@@ -1,6 +1,22 @@
-# Leader Election in Distributed Systems
+# Distributed Leader Election System
 
-This lesson demonstrates the concept of leader election in distributed systems using a simplified Raft-inspired consensus algorithm implementation in JavaScript. Leader election is a critical component in distributed systems that ensures one node acts as the coordinator for the cluster.
+This lesson demonstrates **real distributed leader election** using independent HTTP servers that communicate over the network. Unlike simulations, this implementation shows how leader election works in actual distributed systems like Kubernetes with etcd, Apache Kafka, or MongoDB replica sets.
+
+## Key Features
+
+### Real Distributed Architecture
+
+- **Independent Servers**: Each node runs as a separate HTTP server
+- **Network Communication**: Nodes communicate via REST APIs over HTTP
+- **Service Discovery**: Automatic peer discovery using shared cluster registry
+- **Graceful Handling**: Proper handling of network failures and node crashes
+
+### Production-Like Behavior
+
+- **Realistic Timeouts**: Longer timeouts suitable for network communication
+- **Health Monitoring**: HTTP endpoints for monitoring cluster status
+- **Fault Tolerance**: Automatic re-election when leaders fail
+- **Concurrent Safety**: Thread-safe operations and atomic state changes
 
 ## Key Concepts
 
@@ -31,61 +47,182 @@ Leader election is used in many distributed systems:
 - **MongoDB**: Replica sets use leader election for primary node selection
 - **ZooKeeper**: Provides leader election services for other distributed applications
 
-## Setup
+## Quick Start
 
-1. Install dependencies by running `npm install` in the root directory.
-2. In this directory, start the cluster simulation with `node cluster.js`.
+### Automated Cluster Management
 
-## Usage
-
-The application simulates a cluster of 5 nodes implementing leader election:
-
-- Each node starts as a **Follower**
-- When no heartbeats are received, nodes become **Candidates** and start an election
-- Candidates request votes from other nodes
-- The first candidate to receive majority votes becomes the **Leader**
-- The leader sends periodic heartbeats to maintain leadership
-- If the leader fails, a new election begins
-
-## Testing
-
-Start the simulation:
+The easiest way to explore leader election:
 
 ```bash
-node cluster.js
+# Start interactive demo (recommended)
+./cluster-manager.sh demo
+
+# Or manually manage cluster
+./cluster-manager.sh start    # Start 3-node cluster
+./cluster-manager.sh status   # Check cluster status
+./cluster-manager.sh stop     # Stop cluster
 ```
 
-The console will show:
+### Manual Node Management
 
-- Node state changes (Follower → Candidate → Leader)
-- Vote requests and responses
-- Heartbeat messages
-- Election timeouts and new elections
-
-You can also test individual scenarios:
+Start individual nodes to see real distributed behavior:
 
 ```bash
-# Run a simple demonstration showing key concepts
-node demo.js
+# Terminal 1: Start Node 1 (will become leader)
+node server.js 1 3001
 
-# Run different cluster sizes
-node cluster.js --small  # 3-node cluster
-node cluster.js          # 5-node cluster
+# Terminal 2: Start Node 2 (will become follower)
+node server.js 2 3002
+
+# Terminal 3: Start Node 3 (will become follower)
+node server.js 3 3003
 ```
 
-## Experiment
+### Real-time Monitoring
 
-- Modify the election timeout values in `node.js` to see how it affects election frequency
-- Adjust the heartbeat interval to observe the impact on system stability
-- Try changing the cluster size in `cluster.js` to understand how majority voting works
-- Simulate network partitions by temporarily stopping message delivery between nodes
+```bash
+# Live cluster dashboard
+node monitor.js
 
-## Key Insights
+# Manual status checks
+curl http://localhost:3001/cluster
+curl http://localhost:3002/status
+```
 
-1. **Split Votes**: When multiple candidates start elections simultaneously, votes may be split, requiring multiple election rounds
-2. **Randomized Timeouts**: Random election timeouts prevent repeated split votes
-3. **Majority Requirement**: A candidate needs more than half the votes to become leader
-4. **Term Numbers**: Higher term numbers take precedence, ensuring newer elections override older ones
-5. **Heartbeat Frequency**: Too frequent heartbeats waste resources, too infrequent heartbeats cause unnecessary elections
+## Testing Real Scenarios
 
-This implementation provides a foundation for understanding how distributed systems achieve consensus and maintain coordination in the presence of failures.
+### Scenario 1: Normal Startup
+
+```bash
+# Start nodes one by one and observe leadership
+node server.js 1 3001  # Becomes leader (first node)
+node server.js 2 3002  # Becomes follower
+node server.js 3 3003  # Becomes follower
+```
+
+### Scenario 2: Leader Failure
+
+```bash
+# Kill the leader process (Ctrl+C) and watch re-election
+# Or use the API:
+curl -X POST http://localhost:3001/step-down
+```
+
+### Scenario 3: Node Recovery
+
+```bash
+# Restart a failed node - it will automatically become follower
+node server.js 1 3001  # Rejoins as follower even if it was leader before
+```
+
+### Scenario 4: Network Monitoring
+
+```bash
+# Monitor cluster status in real-time
+node monitor.js
+
+# Check individual node status
+curl http://localhost:3001/status
+curl http://localhost:3002/cluster
+```
+
+## API Endpoints
+
+Each node exposes REST APIs for monitoring and control:
+
+```bash
+# Node status
+GET http://localhost:300X/status
+
+# Full cluster status
+GET http://localhost:300X/cluster
+
+# Force leader to step down (testing)
+POST http://localhost:300X/step-down
+```
+
+## Architecture
+
+### Distributed Components
+
+- **`server.js`**: Individual node server (can be started independently)
+- **`distributed-node.js`**: Core leader election logic with HTTP communication
+- **`monitor.js`**: Real-time cluster monitoring dashboard
+- **`cluster-manager.sh`**: Automation scripts for cluster management
+- **`cluster.json`**: Service discovery registry (auto-generated)
+
+### Communication Flow
+
+1. **Service Discovery**: Nodes register in `cluster.json` when starting
+2. **Elections**: HTTP POST requests for vote solicitation
+3. **Heartbeats**: Periodic HTTP POST from leader to followers
+4. **Monitoring**: HTTP GET endpoints for status and cluster info
+
+### Network Protocol
+
+```
+Vote Request:  POST /vote-request   {term, candidateId}
+Vote Response: 200 OK               {term, voteGranted}
+Heartbeat:     POST /heartbeat      {term, leaderId}
+Status:        GET /status          {id, state, term, ...}
+Cluster Info:  GET /cluster         {cluster[], leader, term}
+```
+
+## Experiments & Learning
+
+### Experiment 1: Timing Configuration
+
+```bash
+# Edit distributed-node.js to adjust:
+this.heartbeatIntervalMs = 2000;      # Heartbeat frequency
+this.getRandomElectionTimeout();      # Election timeout range
+this.requestTimeoutMs = 1000;         # Network request timeout
+```
+
+### Experiment 2: Network Failures
+
+```bash
+# Simulate network partitions by blocking ports
+sudo iptables -A OUTPUT -p tcp --dport 3002 -j DROP  # Block Node 2
+# Watch how cluster handles the partition
+sudo iptables -D OUTPUT -p tcp --dport 3002 -j DROP  # Restore
+```
+
+### Experiment 3: Cluster Scaling
+
+```bash
+# Start additional nodes
+node server.js 4 3004
+node server.js 5 3005
+# Observe how majority voting adapts
+```
+
+### Experiment 4: Leader Behavior
+
+```bash
+# Force step-down and observe re-election
+curl -X POST http://localhost:3001/step-down
+# Monitor re-election process
+node monitor.js
+```
+
+## Real-World Parallels
+
+This implementation demonstrates concepts used in:
+
+- **Kubernetes etcd**: Cluster coordination and configuration storage
+- **Apache Kafka**: Partition leader election for high availability
+- **MongoDB Replica Sets**: Primary election for write operations
+- **Consul**: Service discovery and health checking
+- **Apache Zookeeper**: Distributed coordination service
+
+## Key Insights for Distributed Systems
+
+1. **Network Realities**: Real network delays require longer timeouts than simulations
+2. **Split-Brain Prevention**: Majority voting prevents multiple leaders
+3. **Service Discovery**: Nodes need mechanisms to find each other
+4. **Health Monitoring**: Monitoring is crucial for distributed system operations
+5. **Graceful Degradation**: Systems must handle partial failures elegantly
+6. **State Consistency**: All nodes must eventually converge on the same view
+
+This implementation provides hands-on experience with the challenges and solutions in real distributed systems, preparing you for working with production distributed architectures.
