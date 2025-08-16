@@ -255,6 +255,22 @@ class DistributedNode {
     // Rediscover peers in case cluster changed
     this.discoverPeers();
 
+    // Check if we already have majority (for single-node clusters)
+    const majorityNeeded =
+      Math.floor((this.peers.length + 1) / 2) + 1;
+    if (
+      this.votes >= majorityNeeded &&
+      this.state === STATES.CANDIDATE
+    ) {
+      this.log(
+        `Already have majority with ${this.votes}/${
+          this.peers.length + 1
+        } votes, becoming leader`,
+      );
+      this.becomeLeader();
+      return;
+    }
+
     // Request votes from all peers
     await this.requestVotes();
   }
