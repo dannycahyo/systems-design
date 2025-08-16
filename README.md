@@ -13,6 +13,7 @@ This repository is organized into directories, each covering a specific topic re
 - `rate-limiting/`: Demonstrates the concept of rate limiting and its implementation.
 - `key-value-store/`: Demonstrates the concept of key-value stores and their use cases in system design.
 - `publish-subscribe-pattern/`: Demonstrates the publish-subscribe pattern and its implementation.
+- `leader-election/`: Demonstrates the concept of leader election and consensus algorithms in distributed systems.
 
 ## Usage
 
